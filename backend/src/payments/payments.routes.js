@@ -310,16 +310,24 @@ router.post('/fare', async (req, res) => {
         );
       }
       if (cardResult.rows.length === 0 && uidNormalized) {
+        // Prefix/suffix: device may send full UID, last 4 bytes, or card stored with/without separators
         const normExpr = "UPPER(REPLACE(REPLACE(REPLACE(card_uid, ':', ''), ' ', ''), '-', ''))";
         cardResult = await pool.query(
-          `SELECT * FROM cards WHERE (${normExpr} LIKE $1 || '%' OR $2 LIKE ${normExpr} || '%') AND status = 'active' ORDER BY LENGTH(card_uid) DESC LIMIT 1`,
+          `SELECT * FROM cards WHERE (
+            (${normExpr} LIKE $1 || '%' OR $2 LIKE ${normExpr} || '%')
+            OR (${normExpr} LIKE '%' || $1 OR $2 LIKE '%' || ${normExpr})
+          ) AND status = 'active' ORDER BY LENGTH(card_uid) DESC LIMIT 1`,
           [uidNormalized, uidNormalized]
         );
       }
       if (cardResult.rows.length === 0) {
         await pool.query('ROLLBACK');
-        console.log('[fare] Card not found for UID:', uidNormalized || card_uid);
-        return res.status(404).json({ error: 'Card not found. Register card in web app (Cards) with UID: ' + (uidNormalized || card_uid) });
+        const hint = uidNormalized || card_uid;
+        console.log('[fare] Card not found for UID:', card_uid, 'normalized:', hint);
+        return res.status(404).json({
+          error: 'Card not found. Register this card in the web app (Admin → Cards → Add card) with Card UID: ' + hint,
+          card_uid: hint
+        });
       }
 
       const card = cardResult.rows[0];

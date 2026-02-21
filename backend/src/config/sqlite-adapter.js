@@ -40,14 +40,14 @@ function convertPlaceholders(sql, params) {
   const re = /\$(\d+)/g;
   let m;
   while ((m = re.exec(sql)) !== null) order.push(parseInt(m[1], 10));
-  order.sort((a, b) => a - b);
   const uniq = [...new Set(order)];
   let outSql = sql;
   for (const n of uniq) {
     const reN = new RegExp('\\$' + n + '\\b', 'g');
     outSql = outSql.replace(reN, '?');
   }
-  const outParams = uniq.map((n) => params[n - 1]);
+  // Preserve order of appearance so repeated placeholders get correct param count (e.g. fare UID match)
+  const outParams = order.map((n) => params[n - 1]);
   return [outSql, outParams];
 }
 
