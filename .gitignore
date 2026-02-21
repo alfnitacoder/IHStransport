@@ -1,5 +1,6 @@
-# NFC device app (separate repo or build)
-NFC-app/
+# NFC Android app lives in nfc-app/ (in this repo). Do not use external paths e.g. cashless-NFC.
+# nfc-app/ is included in the repo; uncomment to ignore build outputs only if desired:
+# nfc-app/app/build/
 
 # Dependencies
 node_modules/
@@ -37,3 +38,4 @@ Thumbs.db
 # Database
 *.db
 *.sqlite
+backend/data/

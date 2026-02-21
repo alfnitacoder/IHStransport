@@ -6,6 +6,16 @@ const mycashService = require('./mycash.service');
 
 const router = express.Router();
 
+// Test connection (for NFC app – e.g. to laptop on same network). No auth.
+router.get('/connection-test', async (req, res) => {
+  res.json({
+    ok: true,
+    message: 'Connection successful. NFC device can reach this server.',
+    server_time: new Date().toISOString(),
+    api: 'IHStransport'
+  });
+});
+
 // Initiate MyCash top-up
 router.post('/topup/initiate', authenticateToken, async (req, res) => {
   try {
@@ -228,6 +238,45 @@ router.get('/transactions', authenticateToken, async (req, res) => {
   }
 });
 
+// Get fare config for a bus/vehicle (for NFC devices – no auth)
+router.get('/fare-config', async (req, res) => {
+  try {
+    const bus_id = req.query.bus_id;
+    if (!bus_id) {
+      return res.status(400).json({ error: 'bus_id query parameter is required' });
+    }
+    const busResult = await pool.query(
+      'SELECT id, bus_number, route_name, transport_type FROM buses WHERE id = $1 AND status = $2',
+      [bus_id, 'active']
+    );
+    if (busResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Bus not found or inactive' });
+    }
+    const bus = busResult.rows[0];
+    // Prefer fare_config that matches route_name, then transport_type default (route_name null)
+    const fareResult = await pool.query(
+      `SELECT fare_amount, route_name, transport_type FROM fare_config
+       WHERE transport_type = $1 AND is_active = true
+         AND (route_name = $2 OR route_name IS NULL)
+       ORDER BY route_name IS NULL ASC
+       LIMIT 1`,
+      [bus.transport_type, bus.route_name]
+    );
+    if (fareResult.rows.length === 0) {
+      return res.status(404).json({ error: 'No fare configured for this vehicle' });
+    }
+    const fare = fareResult.rows[0];
+    return res.json({
+      bus_id: bus.id,
+      fare_amount: parseFloat(fare.fare_amount),
+      route_name: bus.route_name,
+      transport_type: bus.transport_type
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Process bus fare payment (for NFC devices)
 router.post('/fare', async (req, res) => {
   try {
@@ -245,14 +294,32 @@ router.post('/fare', async (req, res) => {
       return res.status(400).json({ error: 'Card UID, bus ID, and fare amount are required' });
     }
 
+    // Normalize UID: uppercase hex, no colons/spaces (so app and web app match)
+    const uidNormalized = String(card_uid).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
+    console.log('[fare] card_uid:', card_uid, 'normalized:', uidNormalized, 'len:', uidNormalized.length);
+
     await pool.query('BEGIN');
 
     try {
-      // Get card
-      const cardResult = await pool.query('SELECT * FROM cards WHERE card_uid = $1', [card_uid]);
+      // Get card: exact match, then normalized match, then prefix match (618k may send full or shortened UID)
+      let cardResult = await pool.query('SELECT * FROM cards WHERE card_uid = $1', [card_uid]);
+      if (cardResult.rows.length === 0 && uidNormalized) {
+        cardResult = await pool.query(
+          'SELECT * FROM cards WHERE UPPER(REPLACE(REPLACE(REPLACE(card_uid, \':\', \'\'), \' \', \'\'), \'-\', \'\')) = $1',
+          [uidNormalized]
+        );
+      }
+      if (cardResult.rows.length === 0 && uidNormalized) {
+        const normExpr = "UPPER(REPLACE(REPLACE(REPLACE(card_uid, ':', ''), ' ', ''), '-', ''))";
+        cardResult = await pool.query(
+          `SELECT * FROM cards WHERE (${normExpr} LIKE $1 || '%' OR $2 LIKE ${normExpr} || '%') AND status = 'active' ORDER BY LENGTH(card_uid) DESC LIMIT 1`,
+          [uidNormalized, uidNormalized]
+        );
+      }
       if (cardResult.rows.length === 0) {
         await pool.query('ROLLBACK');
-        return res.status(404).json({ error: 'Card not found' });
+        console.log('[fare] Card not found for UID:', uidNormalized || card_uid);
+        return res.status(404).json({ error: 'Card not found. Register card in web app (Cards) with UID: ' + (uidNormalized || card_uid) });
       }
 
       const card = cardResult.rows[0];
@@ -309,6 +376,7 @@ router.post('/fare', async (req, res) => {
 
       await pool.query('COMMIT');
 
+      console.log('[fare] Approved card id:', card.id, 'new_balance:', balanceAfter);
       res.json({
         success: true,
         transaction: transactionResult.rows[0],

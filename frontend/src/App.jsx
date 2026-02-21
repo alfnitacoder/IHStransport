@@ -15,6 +15,8 @@ import Payments from './pages/Payments';
 import Buses from './pages/Buses';
 import BusMap from './pages/BusMap';
 import Owners from './pages/Owners';
+import Devices from './pages/Devices';
+import Customers from './pages/Customers';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Layout from './components/Layout';
@@ -93,9 +95,13 @@ function App() {
           <Route path="buses" element={<Buses />} />
           <Route path="bus-map" element={<BusMap />} />
           <Route path="owners" element={<Owners />} />
+          <Route path="devices" element={<Devices />} />
+          <Route path="customers" element={<Customers />} />
           <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
+        <Route path="*" element={<Navigate to="/landing" replace />} />
       </Routes>
     </Router>
   );

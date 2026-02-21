@@ -21,13 +21,25 @@ router.post('/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     const result = await pool.query(
       'INSERT INTO users (username, password_hash, email, role, phone, full_name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, username, role, email',
       [username, hashedPassword, email, role, phone, full_name]
     );
 
-    res.status(201).json({ message: 'User created successfully', user: result.rows[0] });
+    const newUser = result.rows[0];
+
+    // When signing up as operator (bus_owner), create a bus_owners row so they show in Operators list
+    if (role === 'bus_owner' && newUser.id) {
+      const ownerName = (full_name && full_name.trim()) || username;
+      const ownerPhone = (phone && phone.trim()) || '—';
+      await pool.query(
+        'INSERT INTO bus_owners (user_id, name, phone, settlement_method) VALUES ($1, $2, $3, $4)',
+        [newUser.id, ownerName, ownerPhone, 'bank_transfer']
+      );
+    }
+
+    res.status(201).json({ message: 'User created successfully', user: newUser });
   } catch (error) {
     if (error.code === '23505') {
       return res.status(400).json({ error: 'Username or email already exists' });

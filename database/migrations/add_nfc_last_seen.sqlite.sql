@@ -1,0 +1,2 @@
+-- Run once if nfc_devices already exists without last_seen_at:
+-- sqlite3 path/to/development.sqlite "ALTER TABLE nfc_devices ADD COLUMN last_seen_at TEXT;"

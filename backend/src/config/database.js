@@ -1,5 +1,16 @@
-const { Pool } = require('pg');
 require('dotenv').config();
+
+// Dev mode: use SQLite unless DB_TYPE is explicitly set to postgres/pg
+const useSqlite =
+  process.env.DB_TYPE === 'sqlite' ||
+  (process.env.NODE_ENV !== 'production' && process.env.DB_TYPE !== 'pg' && process.env.DB_TYPE !== 'postgres');
+
+if (useSqlite) {
+  module.exports = require('./sqlite-adapter');
+  return;
+}
+
+const { Pool } = require('pg');
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',

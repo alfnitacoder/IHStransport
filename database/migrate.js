@@ -26,6 +26,17 @@ async function migrate() {
     
     console.log('Running database migrations...');
     await pool.query(schema);
+    // GPS support (bus_locations, location columns) - idempotent
+    try {
+      const gpsPath = path.join(__dirname, 'add_gps_support.sql');
+      if (fs.existsSync(gpsPath)) {
+        const gps = fs.readFileSync(gpsPath, 'utf8');
+        await pool.query(gps);
+        console.log('✅ GPS support applied');
+      }
+    } catch (e) {
+      console.warn('GPS support (optional):', e.message);
+    }
     // Add transport_type to existing tables (bus, plane, ship)
     try {
       await pool.query(`ALTER TABLE buses ADD COLUMN IF NOT EXISTS transport_type VARCHAR(20) DEFAULT 'bus'`);

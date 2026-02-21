@@ -16,6 +16,22 @@ router.get('/', authenticateToken, authorize('admin'), async (req, res) => {
   }
 });
 
+// Get users who signed up as bus_owner but have no operator (bus_owners) record yet
+router.get('/pending', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT u.id, u.username, u.email, u.full_name, u.phone, u.created_at
+       FROM users u
+       LEFT JOIN bus_owners bo ON bo.user_id = u.id
+       WHERE u.role = 'bus_owner' AND bo.id IS NULL
+       ORDER BY u.created_at DESC`
+    );
+    res.json({ pending: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get bus owner by ID
 router.get('/:id', authenticateToken, async (req, res) => {
   try {

@@ -109,6 +109,52 @@ router.patch('/:cardId/balance', authenticateToken, authorize('admin'), async (r
   }
 });
 
+// Update card: assign customer and/or set balance (admin only)
+router.patch('/:cardId', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const { cardId } = req.params;
+    const { customer_id, balance } = req.body;
+
+    const check = await pool.query('SELECT id FROM cards WHERE id = $1', [cardId]);
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    if (customer_id !== undefined) {
+      updates.push(`customer_id = $${idx++}`);
+      values.push(customer_id === '' || customer_id === null ? null : customer_id);
+    }
+    if (balance !== undefined) {
+      updates.push(`balance = $${idx++}`);
+      values.push(parseFloat(balance));
+    }
+
+    if (updates.length === 0) {
+      const current = await pool.query(
+        'SELECT c.*, u.full_name as customer_name FROM cards c LEFT JOIN users u ON c.customer_id = u.id WHERE c.id = $1',
+        [cardId]
+      );
+      return res.json({ card: current.rows[0] });
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(cardId);
+    const sql = `UPDATE cards SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`;
+    const result = await pool.query(sql, values);
+    const withName = await pool.query(
+      'SELECT c.*, u.full_name as customer_name FROM cards c LEFT JOIN users u ON c.customer_id = u.id WHERE c.id = $1',
+      [cardId]
+    );
+    res.json({ card: withName.rows[0] });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Update card status
 router.patch('/:cardId/status', authenticateToken, authorize('admin'), async (req, res) => {
   try {

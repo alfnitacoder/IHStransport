@@ -2,7 +2,21 @@
 
 This guide will help you set up the Bus Cashless Card Payment System web application.
 
-## Prerequisites
+## Development database (SQLite) – optional
+
+For local development or testing you can use **SQLite** instead of PostgreSQL (no PostgreSQL install required):
+
+```bash
+cd backend
+npm run migrate:sqlite
+DB_TYPE=sqlite npm run dev
+```
+
+See **[docs/DEVELOPMENT_DATABASE.md](docs/DEVELOPMENT_DATABASE.md)** for details.
+
+---
+
+## Prerequisites (for PostgreSQL)
 
 - Node.js (v16 or higher)
 - PostgreSQL (v12 or higher)
@@ -127,6 +141,8 @@ The backend API provides the following endpoints:
 - `POST /api/payments/topup/initiate` - Initiate MyCash top-up
 - `POST /api/payments/topup/send-otp` - Send OTP for payment
 - `POST /api/payments/topup/approve` - Approve payment with OTP
+- `GET /api/payments/connection-test` - Test connection (for NFC app, e.g. to laptop; no auth)
+- `GET /api/payments/fare-config?bus_id=` - Get fare for a bus/vehicle (for NFC devices, no auth)
 - `POST /api/payments/fare` - Process bus fare payment (for NFC devices)
 - `GET /api/payments/transactions` - Get transaction history
 
