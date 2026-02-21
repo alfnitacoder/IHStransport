@@ -1,0 +1,31 @@
+name: nfc_bus_app
+description: NFC Bus Payment App for Cashless Transit System
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.1.0
+  nfc_manager: ^3.3.0
+  geolocator: ^10.1.0
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  provider: ^6.1.1
+  json_annotation: ^4.8.1
+  intl: ^0.18.1
+  shared_preferences: ^2.2.2
+  connectivity_plus: ^5.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true

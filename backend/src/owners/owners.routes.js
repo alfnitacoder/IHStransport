@@ -4,11 +4,27 @@ const { authenticateToken, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Get all bus owners
-router.get('/', authenticateToken, authorize('admin'), async (req, res) => {
+// Get all bus owners (admin); or own operator only (bus_owner, for device assign dropdown)
+router.get('/', authenticateToken, async (req, res) => {
   try {
+    if (req.user.role === 'bus_owner') {
+      const result = await pool.query(
+        'SELECT bo.*, u.username, u.email FROM bus_owners bo LEFT JOIN users u ON bo.user_id = u.id WHERE bo.user_id = $1',
+        [req.user.id]
+      );
+      return res.json({ owners: result.rows });
+    }
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const result = await pool.query(
-      'SELECT bo.*, u.username, u.email FROM bus_owners bo LEFT JOIN users u ON bo.user_id = u.id ORDER BY bo.created_at DESC'
+      `SELECT bo.*, u.username, u.email,
+        (SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
+         INNER JOIN buses b ON t.bus_id = b.id
+         WHERE b.bus_owner_id = bo.id AND t.transaction_type = 'fare_payment' AND t.status = 'completed') AS total_revenue
+       FROM bus_owners bo
+       LEFT JOIN users u ON bo.user_id = u.id
+       ORDER BY bo.created_at DESC`
     );
     res.json({ owners: result.rows });
   } catch (error) {

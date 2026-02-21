@@ -71,7 +71,7 @@ const Owners = () => {
         </button>
       </div>
       <p style={{ color: '#666', fontSize: '14px', marginBottom: '20px' }}>
-        Operators can be <strong>bus owners</strong>, <strong>airports or airlines</strong> (for planes), or <strong>shipping/boat companies</strong> (for ships). Add each one here, then assign vehicles to them in Fleet.
+        Operators can be <strong>bus owners</strong>, <strong>airports or airlines</strong> (for planes), or <strong>shipping/boat companies</strong> (for ships). Add each one here, then assign vehicles to them in Transport.
       </p>
 
       {pending.length > 0 && (

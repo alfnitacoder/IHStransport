@@ -19,6 +19,7 @@ import Devices from './pages/Devices';
 import Customers from './pages/Customers';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Fare from './pages/Fare';
 import Layout from './components/Layout';
 
 const PrivateRoute = ({ children }) => {
@@ -92,12 +93,15 @@ function App() {
           <Route index element={<DashboardRouter />} />
           <Route path="cards" element={<Cards />} />
           <Route path="payments" element={<Payments />} />
-          <Route path="buses" element={<Buses />} />
-          <Route path="bus-map" element={<BusMap />} />
+          <Route path="transport" element={<Buses />} />
+          <Route path="buses" element={<Navigate to="/transport" replace />} />
+          <Route path="transport-map" element={<BusMap />} />
+          <Route path="bus-map" element={<Navigate to="/transport-map" replace />} />
           <Route path="owners" element={<Owners />} />
           <Route path="devices" element={<Devices />} />
           <Route path="customers" element={<Customers />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="fare" element={<Fare />} />
           <Route path="settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

@@ -1,7 +1,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../config/database');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, authorize } = require('../middleware/auth');
 const mycashService = require('./mycash.service');
 
 const router = express.Router();
@@ -238,6 +238,61 @@ router.get('/transactions', authenticateToken, async (req, res) => {
   }
 });
 
+// List all fare configs (admin only – for editing)
+router.get('/fare-config/list', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT id, transport_type, route_name, fare_amount, is_active, created_at FROM fare_config ORDER BY transport_type, route_name NULLS LAST'
+    );
+    res.json({ fare_configs: result.rows });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get current default bus fare (admin only – for editing form)
+router.get('/fare-config/default', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, fare_amount, transport_type FROM fare_config WHERE transport_type = 'bus' AND route_name IS NULL AND is_active = true LIMIT 1"
+    );
+    const row = result.rows[0];
+    res.json({ fare_amount: row ? parseFloat(row.fare_amount) : null, id: row?.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Set default bus fare (admin only). NFC devices get this via GET /fare-config?bus_id=X
+router.put('/fare-config/default', authenticateToken, authorize('admin'), async (req, res) => {
+  try {
+    const fare_amount = parseFloat(req.body.fare_amount);
+    if (Number.isNaN(fare_amount) || fare_amount < 0) {
+      return res.status(400).json({ error: 'Valid fare amount (number >= 0) is required' });
+    }
+    const existing = await pool.query(
+      "SELECT id FROM fare_config WHERE transport_type = 'bus' AND route_name IS NULL LIMIT 1"
+    );
+    if (existing.rows.length > 0) {
+      await pool.query(
+        'UPDATE fare_config SET fare_amount = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [fare_amount, existing.rows[0].id]
+      );
+    } else {
+      await pool.query(
+        "INSERT INTO fare_config (transport_type, route_name, fare_amount, is_active) VALUES ('bus', NULL, $1, true)",
+        [fare_amount]
+      );
+    }
+    const updated = await pool.query(
+      "SELECT id, transport_type, route_name, fare_amount, is_active FROM fare_config WHERE transport_type = 'bus' AND route_name IS NULL LIMIT 1"
+    );
+    res.json({ fare_config: updated.rows[0], message: 'Default bus fare updated. NFC devices will show this fare when they call GET /api/payments/fare-config?bus_id=<their bus id>.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get fare config for a bus/vehicle (for NFC devices – no auth)
 router.get('/fare-config', async (req, res) => {
   try {
@@ -294,51 +349,97 @@ router.post('/fare', async (req, res) => {
       return res.status(400).json({ error: 'Card UID, bus ID, and fare amount are required' });
     }
 
+    // Validate bus exists (avoids FK error on INSERT and gives clear rejection)
+    const busCheck = await pool.query(
+      'SELECT id FROM buses WHERE id = $1 AND status = $2',
+      [bus_id, 'active']
+    );
+    if (busCheck.rows.length === 0) {
+      console.log('[fare] Rejected: bus not found or inactive, bus_id:', bus_id);
+      return res.status(400).json({ error: 'Bus not found or inactive. Check bus_id and Fleet status.' });
+    }
+
     // Normalize UID: uppercase hex, no colons/spaces (so app and web app match)
     const uidNormalized = String(card_uid).replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
-    console.log('[fare] card_uid:', card_uid, 'normalized:', uidNormalized, 'len:', uidNormalized.length);
+    const uidTrimmed = uidNormalized.replace(/0+$/, '') || uidNormalized; // significant prefix (many readers send trailing zeros)
+    // Some NFC readers send UID in reversed byte order (pairs): 250E8B1B08 -> 081B8B0E25
+    const reverseHexPairs = (hex) => {
+      let out = '';
+      for (let i = hex.length - 2; i >= 0; i -= 2) out += hex.slice(i, i + 2);
+      return out || hex;
+    };
+    const uidReversed = uidTrimmed.length >= 4 ? reverseHexPairs(uidTrimmed) : null;
+    console.log('[fare] card_uid:', card_uid, 'normalized:', uidNormalized, 'trimmed:', uidTrimmed, uidReversed && uidReversed !== uidTrimmed ? 'reversed: ' + uidReversed : '');
 
     await pool.query('BEGIN');
 
     try {
-      // Get card: exact match, then normalized match, then prefix match (618k may send full or shortened UID)
+      const normExpr = "UPPER(TRIM(REPLACE(REPLACE(REPLACE(card_uid, ':', ''), ' ', ''), '-', '')))";
+      // 1) Exact match (raw)
       let cardResult = await pool.query('SELECT * FROM cards WHERE card_uid = $1', [card_uid]);
+      // 2) Exact normalized match (full and trimmed)
       if (cardResult.rows.length === 0 && uidNormalized) {
         cardResult = await pool.query(
-          'SELECT * FROM cards WHERE UPPER(REPLACE(REPLACE(REPLACE(card_uid, \':\', \'\'), \' \', \'\'), \'-\', \'\')) = $1',
+          `SELECT * FROM cards WHERE ${normExpr} = $1`,
           [uidNormalized]
         );
       }
+      if (cardResult.rows.length === 0 && uidTrimmed) {
+        cardResult = await pool.query(
+          `SELECT * FROM cards WHERE ${normExpr} = $1`,
+          [uidTrimmed]
+        );
+      }
+      // 3) Prefix/suffix match (device may send full UID, last 4 bytes, or card stored with/without separators)
       if (cardResult.rows.length === 0 && uidNormalized) {
-        // Prefix/suffix: device may send full UID, last 4 bytes, or card stored with/without separators
-        const normExpr = "UPPER(REPLACE(REPLACE(REPLACE(card_uid, ':', ''), ' ', ''), '-', ''))";
         cardResult = await pool.query(
           `SELECT * FROM cards WHERE (
-            (${normExpr} LIKE $1 || '%' OR $2 LIKE ${normExpr} || '%')
+            (${normExpr} = $1 OR $2 LIKE ${normExpr} || '%' OR ${normExpr} LIKE $1 || '%')
             OR (${normExpr} LIKE '%' || $1 OR $2 LIKE '%' || ${normExpr})
-          ) AND status = 'active' ORDER BY LENGTH(card_uid) DESC LIMIT 1`,
-          [uidNormalized, uidNormalized]
+          ) AND status = 'active' ORDER BY LENGTH(${normExpr}) DESC LIMIT 1`,
+          [uidTrimmed, uidNormalized]
+        );
+      }
+      // 4) Reversed byte order (reader may send 081B8B0E25 when card is stored as 250E8B1B08)
+      if (cardResult.rows.length === 0 && uidReversed) {
+        cardResult = await pool.query(
+          `SELECT * FROM cards WHERE (${normExpr} = $1 OR ${normExpr} LIKE $1 || '%' OR $1 LIKE ${normExpr} || '%') AND status = 'active' ORDER BY LENGTH(${normExpr}) DESC LIMIT 1`,
+          [uidReversed]
+        );
+      }
+      // 5) First 8 hex chars only (4-byte UID; reader may send only this)
+      if (cardResult.rows.length === 0 && uidTrimmed.length >= 8) {
+        const uid4 = uidTrimmed.slice(0, 8);
+        cardResult = await pool.query(
+          `SELECT * FROM cards WHERE (${normExpr} = $1 OR ${normExpr} LIKE $1 || '%' OR $1 LIKE ${normExpr} || '%') AND status = 'active' ORDER BY LENGTH(${normExpr}) DESC LIMIT 1`,
+          [uid4]
         );
       }
       if (cardResult.rows.length === 0) {
         await pool.query('ROLLBACK');
-        const hint = uidNormalized || card_uid;
+        const hint = uidTrimmed || uidNormalized || card_uid;
         console.log('[fare] Card not found for UID:', card_uid, 'normalized:', hint);
         return res.status(404).json({
           error: 'Card not found. Register this card in the web app (Admin → Cards → Add card) with Card UID: ' + hint,
-          card_uid: hint
+          card_uid: hint,
+          suggested_uid: hint
         });
       }
 
       const card = cardResult.rows[0];
+      console.log('[fare] Found card id:', card.id, 'uid:', card.card_uid, 'balance:', card.balance);
 
       if (card.status !== 'active') {
         await pool.query('ROLLBACK');
+        console.log('[fare] Rejected: card status', card.status);
         return res.status(400).json({ error: `Card is ${card.status}` });
       }
 
-      if (parseFloat(card.balance) < parseFloat(fare_amount)) {
+      const fareNum = parseFloat(fare_amount);
+      const balanceNum = parseFloat(card.balance);
+      if (balanceNum < fareNum) {
         await pool.query('ROLLBACK');
+        console.log('[fare] Rejected: insufficient balance', balanceNum, '<', fareNum);
         return res.status(400).json({ error: 'Insufficient balance' });
       }
 
@@ -385,16 +486,18 @@ router.post('/fare', async (req, res) => {
       await pool.query('COMMIT');
 
       console.log('[fare] Approved card id:', card.id, 'new_balance:', balanceAfter);
-      res.json({
+      return res.json({
         success: true,
         transaction: transactionResult.rows[0],
         new_balance: balanceAfter
       });
-    } catch (error) {
+    } catch (innerError) {
       await pool.query('ROLLBACK');
-      throw error;
+      console.error('[fare] DB/processing error after finding card:', innerError.message);
+      throw innerError;
     }
   } catch (error) {
+    console.error('[fare] Error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

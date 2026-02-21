@@ -1,0 +1,69 @@
+{
+  "fare_payment_example": {
+    "endpoint": "POST /api/payments/fare",
+    "request": {
+      "card_uid": "ABC123DEF456",
+      "bus_id": 1,
+      "fare_amount": 2.50,
+      "device_timestamp": "2024-02-19T12:00:00Z",
+      "latitude": -17.8252,
+      "longitude": 31.0335,
+      "location_accuracy": 10.5
+    },
+    "success_response": {
+      "success": true,
+      "transaction": {
+        "id": 123,
+        "card_id": 5,
+        "bus_id": 1,
+        "amount": 2.50,
+        "fare_amount": 2.50,
+        "balance_before": 50.00,
+        "balance_after": 47.50,
+        "transaction_type": "fare_payment",
+        "status": "completed",
+        "latitude": -17.8252,
+        "longitude": 31.0335,
+        "location_accuracy": 10.5,
+        "synced_at": "2024-02-19T12:00:01Z"
+      },
+      "new_balance": 47.50
+    },
+    "error_responses": {
+      "insufficient_balance": {
+        "error": "Insufficient balance"
+      },
+      "card_not_found": {
+        "error": "Card not found"
+      },
+      "card_blocked": {
+        "error": "Card is blocked"
+      },
+      "invalid_card": {
+        "error": "Card is expired"
+      }
+    }
+  },
+  "location_update_example": {
+    "endpoint": "POST /api/buses/1/location",
+    "authentication": "Bearer <token>",
+    "request": {
+      "latitude": -17.8252,
+      "longitude": 31.0335,
+      "accuracy": 10.5,
+      "speed": 45.2,
+      "heading": 180.5
+    },
+    "response": {
+      "success": true,
+      "message": "Bus location updated",
+      "location": {
+        "latitude": -17.8252,
+        "longitude": 31.0335,
+        "accuracy": 10.5,
+        "speed": 45.2,
+        "heading": 180.5
+      }
+    }
+  }
+}

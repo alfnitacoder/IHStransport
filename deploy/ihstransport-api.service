@@ -1,0 +1,21 @@
+[Unit]
+Description=IHStransport / Cashless Transit API (Node.js backend)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=wantok
+Group=wantok
+WorkingDirectory=/home/wantok/cashlesstransit/backend
+Environment=NODE_ENV=production
+EnvironmentFile=/home/wantok/cashlesstransit/backend/.env
+ExecStart=/usr/bin/node src/app.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ihstransport-api
+
+[Install]
+WantedBy=multi-user.target

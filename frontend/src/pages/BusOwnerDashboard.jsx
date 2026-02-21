@@ -6,24 +6,39 @@ const BusOwnerDashboard = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchStats = async () => {
+    setApiError(null);
+    try {
+      const response = await api.get('/reports/dashboard');
+      setStats(response.data.stats);
+    } catch (error) {
+      const status = error.response?.status;
+      const message = error.response?.data?.error || error.message || 'Request failed';
+      setApiError({ status, message });
+      console.error('Failed to fetch dashboard stats:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchStats();
+  };
 
   useEffect(() => {
-    const fetchStats = async () => {
-      setApiError(null);
-      try {
-        const response = await api.get('/reports/dashboard');
-        setStats(response.data.stats);
-      } catch (error) {
-        const status = error.response?.status;
-        const message = error.response?.data?.error || error.message || 'Request failed';
-        setApiError({ status, message });
-        console.error('Failed to fetch dashboard stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
+    const interval = setInterval(fetchStats, 15000);
+    const onRefresh = () => fetchStats();
+    window.addEventListener('focus', onRefresh);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetchStats(); });
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onRefresh);
+    };
   }, []);
 
   if (loading) {
@@ -69,8 +84,20 @@ const BusOwnerDashboard = () => {
 
   return (
     <div>
-      <h1 style={{ marginBottom: '30px' }}>Operator Dashboard</h1>
-      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ margin: 0 }}>Operator Dashboard</h1>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleRefresh}
+          disabled={refreshing}
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
+      <p style={{ color: '#666', fontSize: '14px', marginTop: '-20px', marginBottom: '20px' }}>
+        Revenue updates every 15s. Tap Refresh after a card tap to see latest VUV.
+      </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
         {statCards.map((card, index) => (
           <div

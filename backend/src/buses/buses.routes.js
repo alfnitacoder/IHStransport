@@ -51,22 +51,44 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Create new vehicle (bus, plane, ship) (admin only)
-router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
+// Create new vehicle (admin picks operator; bus_owner uses self)
+router.post('/', authenticateToken, authorize('admin', 'bus_owner'), async (req, res) => {
   try {
-    const { bus_owner_id, bus_number, transport_type, route_name, device_id } = req.body;
+    const { bus_owner_id: bodyOwnerId, bus_number, transport_type, route_name, device_id } = req.body;
     const type = ['bus', 'plane', 'ship'].includes(transport_type) ? transport_type : 'bus';
 
-    if (!bus_owner_id || !bus_number) {
-      return res.status(400).json({ error: 'Owner ID and vehicle number are required' });
+    let bus_owner_id;
+    if (req.user.role === 'bus_owner') {
+      const ownerResult = await pool.query('SELECT id FROM bus_owners WHERE user_id = $1', [req.user.id]);
+      if (ownerResult.rows.length === 0) {
+        return res.status(403).json({ error: 'Operator record not found. Contact admin.' });
+      }
+      bus_owner_id = ownerResult.rows[0].id;
+    } else {
+      if (!bodyOwnerId) {
+        return res.status(400).json({ error: 'Owner ID and vehicle number are required' });
+      }
+      bus_owner_id = bodyOwnerId;
+    }
+
+    if (!bus_number) {
+      return res.status(400).json({ error: 'Vehicle number is required' });
     }
 
     const result = await pool.query(
       'INSERT INTO buses (bus_owner_id, bus_number, transport_type, route_name, device_id, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
       [bus_owner_id, bus_number, type, route_name || null, device_id || null, 'active']
     );
+    const newBus = result.rows[0];
 
-    res.status(201).json({ bus: result.rows[0] });
+    if (device_id && newBus.id) {
+      await pool.query(
+        'UPDATE nfc_devices SET bus_id = $1, bus_owner_id = $2, updated_at = CURRENT_TIMESTAMP WHERE device_id = $3',
+        [newBus.id, bus_owner_id, device_id]
+      );
+    }
+
+    res.status(201).json({ bus: newBus });
   } catch (error) {
     if (error.code === '23505') {
       return res.status(400).json({ error: 'Bus number or device ID already exists' });
@@ -75,11 +97,25 @@ router.post('/', authenticateToken, authorize('admin'), async (req, res) => {
   }
 });
 
-// Update vehicle
-router.patch('/:id', authenticateToken, authorize('admin'), async (req, res) => {
+// Update vehicle (admin: any; bus_owner: own only)
+router.patch('/:id', authenticateToken, authorize('admin', 'bus_owner'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { bus_number, transport_type, route_name, device_id, status } = req.body;
+    const { bus_number, transport_type, route_name, device_id, status, bus_owner_id: bodyBusOwnerId } = req.body;
+
+    if (req.user.role === 'bus_owner') {
+      const ownerResult = await pool.query('SELECT id FROM bus_owners WHERE user_id = $1', [req.user.id]);
+      if (ownerResult.rows.length === 0) {
+        return res.status(403).json({ error: 'Operator record not found.' });
+      }
+      const ownCheck = await pool.query(
+        'SELECT id FROM buses WHERE id = $1 AND bus_owner_id = $2',
+        [id, ownerResult.rows[0].id]
+      );
+      if (ownCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Bus not found' });
+      }
+    }
 
     const updates = [];
     const params = [];
@@ -88,6 +124,10 @@ router.patch('/:id', authenticateToken, authorize('admin'), async (req, res) => 
     if (bus_number !== undefined) {
       updates.push(`bus_number = $${paramCount++}`);
       params.push(bus_number);
+    }
+    if (req.user.role === 'admin' && bodyBusOwnerId !== undefined) {
+      updates.push(`bus_owner_id = $${paramCount++}`);
+      params.push(bodyBusOwnerId || null);
     }
     if (transport_type !== undefined && ['bus', 'plane', 'ship'].includes(transport_type)) {
       updates.push(`transport_type = $${paramCount++}`);
@@ -110,6 +150,26 @@ router.patch('/:id', authenticateToken, authorize('admin'), async (req, res) => 
       return res.status(400).json({ error: 'No fields to update' });
     }
 
+    if (device_id !== undefined) {
+      const current = await pool.query('SELECT device_id, bus_owner_id FROM buses WHERE id = $1', [id]);
+      if (current.rows.length > 0) {
+        const oldDeviceId = current.rows[0].device_id;
+        const bus_owner_id = current.rows[0].bus_owner_id;
+        if (oldDeviceId) {
+          await pool.query(
+            'UPDATE nfc_devices SET bus_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE device_id = $1',
+            [oldDeviceId]
+          );
+        }
+        if (device_id) {
+          await pool.query(
+            'UPDATE nfc_devices SET bus_id = $1, bus_owner_id = $2, updated_at = CURRENT_TIMESTAMP WHERE device_id = $3',
+            [id, bus_owner_id, device_id]
+          );
+        }
+      }
+    }
+
     updates.push(`updated_at = CURRENT_TIMESTAMP`);
     params.push(id);
 
@@ -120,6 +180,13 @@ router.patch('/:id', authenticateToken, authorize('admin'), async (req, res) => 
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Bus not found' });
+    }
+
+    if (req.user.role === 'admin' && bodyBusOwnerId !== undefined) {
+      await pool.query(
+        'UPDATE nfc_devices SET bus_owner_id = $1, updated_at = CURRENT_TIMESTAMP WHERE bus_id = $2',
+        [bodyBusOwnerId || null, id]
+      );
     }
 
     res.json({ bus: result.rows[0] });

@@ -1,7 +1,10 @@
 import axios from 'axios';
 
-// In dev, call backend directly so PATCH is not dropped by proxy. Prod: /api (or set VITE_API_URL).
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3001/api' : '/api');
+// Use VITE_API_URL if set. Else: when app is opened from same machine (localhost) use backend direct;
+// when opened from another host (e.g. 172.16.0.68:8080) use relative /api so the dev server proxies to backend.
+const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const devApiUrl = isLocalhost ? 'http://localhost:3001/api' : '/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? devApiUrl : '/api');
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -29,7 +32,9 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const message = error.response?.data?.error || '';
+    if (status === 401 || (status === 403 && (message.includes('expired') || message.includes('Invalid or expired')))) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/landing';

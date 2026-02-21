@@ -48,7 +48,14 @@ const BusMap = () => {
 
       {buses.length === 0 ? (
         <div className="card">
-          <p>No buses with GPS location data available.</p>
+          <h2 style={{ marginTop: 0 }}>No buses with GPS location data available</h2>
+          <p>Buses appear here after they report their location. To get locations on the map:</p>
+          <ol style={{ textAlign: 'left', maxWidth: '560px', margin: '16px auto' }}>
+            <li><strong>Assign an NFC device to a bus</strong> — In <strong>NFC Devices</strong>, assign a device to a bus (and optionally an owner).</li>
+            <li><strong>Send location from the NFC app</strong> — On the validator, set <strong>API URL</strong> (e.g. <code>http://172.16.0.68:3001</code>), set <strong>Validator ID</strong>, and ensure the device is assigned to that bus. The app sends location every 45 seconds.</li>
+            <li>Alternatively, <strong>process a fare with GPS</strong> — A card tap that includes latitude/longitude will update that bus’s position.</li>
+          </ol>
+          <p style={{ color: '#666', fontSize: '14px' }}>This map refreshes every 30 seconds. If you just assigned a device, wait for the next location update from the app.</p>
         </div>
       ) : (
         <>

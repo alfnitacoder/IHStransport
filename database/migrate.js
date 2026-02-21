@@ -45,6 +45,17 @@ async function migrate() {
     } catch (e) {
       // Ignore if columns already exist or constraint issues
     }
+    // Ensure nfc_devices exists (if schema was run before this table was added)
+    try {
+      const nfcPath = path.join(__dirname, 'migrations', 'add_nfc_devices_pg.sql');
+      if (fs.existsSync(nfcPath)) {
+        const nfcSql = fs.readFileSync(nfcPath, 'utf8');
+        await pool.query(nfcSql);
+        console.log('✅ nfc_devices table ensured');
+      }
+    } catch (e) {
+      console.warn('nfc_devices (optional):', e.message);
+    }
     console.log('✅ Database migrations completed successfully!');
     
     // Create default admin user (password: admin123 - should be changed in production)

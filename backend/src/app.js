@@ -39,9 +39,19 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check (includes PostgreSQL ping)
+app.get('/health', async (req, res) => {
+  const out = { status: 'ok', timestamp: new Date().toISOString() };
+  try {
+    await pool.query('SELECT 1');
+    out.database = 'postgresql';
+    out.db_ok = true;
+  } catch (err) {
+    out.database = 'postgresql';
+    out.db_ok = false;
+    out.db_error = err.message;
+  }
+  res.json(out);
 });
 
 // API root (avoids 404 when client hits GET /api with no path)

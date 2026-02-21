@@ -16,17 +16,18 @@ const Layout = () => {
     { path: '/', label: 'Dashboard', icon: '📊' },
     { path: '/cards', label: 'Cards', icon: '💳' },
     { path: '/payments', label: 'Payments', icon: '💵' },
-    { path: '/buses', label: 'Fleet', icon: '🚌' },
-    { path: '/bus-map', label: 'Fleet Map', icon: '🗺️' },
+    { path: '/transport', label: 'Transport', icon: '🚌' },
+    { path: '/transport-map', label: 'Transport Map', icon: '🗺️' },
     { path: '/owners', label: 'Operators', icon: '👥' },
     { path: '/devices', label: 'NFC Devices', icon: '📱' },
+    { path: '/fare', label: 'Bus fare', icon: '🎫' },
     { path: '/customers', label: 'Customers', icon: '👤' },
     { path: '/reports', label: 'Reports', icon: '📈' },
     { path: '/settings', label: 'Settings', icon: '⚙️' }
   ].filter(item => {
     // Filter menu based on user role
     if (user?.role === 'bus_owner') {
-      return ['/', '/buses', '/bus-map', '/reports', '/devices'].includes(item.path);
+      return ['/', '/transport', '/transport-map', '/reports', '/devices'].includes(item.path);
     }
     if (user?.role === 'agent') {
       return ['/', '/cards', '/payments'].includes(item.path);
@@ -38,7 +39,7 @@ const Layout = () => {
     return true;
   }).filter(item => {
     // Settings, Customers, and NFC Devices only for admin (bus_owner sees Devices as read-only)
-    if (item.path === '/settings' || item.path === '/customers') return user?.role === 'admin';
+    if (item.path === '/settings' || item.path === '/customers' || item.path === '/fare') return user?.role === 'admin';
     if (item.path === '/devices') return user?.role === 'admin' || user?.role === 'bus_owner';
     return true;
   });
