@@ -9,7 +9,8 @@
     "migrate": "node ../database/migrate.js",
     "migrate:sqlite": "DB_TYPE=sqlite node ../database/migrate-sqlite.js",
     "migrate:pg": "DB_TYPE=pg node ../database/migrate.js",
-    "db:test": "node scripts/db-test.js"
+    "db:test": "node scripts/db-test.js",
+    "cards:sqlite": "DB_TYPE=sqlite node scripts/list-cards-sqlite.js"
   },
   "keywords": [
     "bus",

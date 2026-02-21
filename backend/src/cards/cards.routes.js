@@ -77,7 +77,8 @@ router.post('/', authenticateToken, authorize('admin', 'agent'), async (req, res
 
     res.status(201).json({ card: result.rows[0] });
   } catch (error) {
-    if (error.code === '23505') {
+    // PostgreSQL: 23505 = unique_violation; SQLite: message contains 'UNIQUE'
+    if (error.code === '23505' || (error.message && error.message.includes('UNIQUE'))) {
       return res.status(400).json({ error: 'Card UID already exists' });
     }
     res.status(500).json({ error: error.message });
